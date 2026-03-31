@@ -831,7 +831,193 @@
     return null;
   }
 
+  // ─── Medical term corrections (speech recognition misinterpretations) ───
+  // Comprehensive radiology / RMN / CT / ecografie dictionary
+  const medicalCorrections = [
+    // ═══ ACRONIME ═══
+    [/\bREM ene(?:[- ]?ul)?\b/gi, 'RMN'],
+    [/\bar em en(?:e|ul|u)?\b/gi, 'RMN'],
+    [/\ber[- ]?em[- ]?en(?:e|ul)?\b/gi, 'RMN'],
+    [/\bremene\b/gi, 'RMN'],
+    [/\bermen\b/gi, 'RMN'],
+    [/\bce te(?:[- ]?ul)?\b/gi, 'CT'],
+    [/\bci ti(?:[- ]?ul)?\b/gi, 'CT'],
+    [/\bse te\b/gi, 'CT'],
+    [/\bi er em\b/gi, 'IRM'],
+    [/\bpet ce te\b/gi, 'PET-CT'],
+    [/\bpet ci ti\b/gi, 'PET-CT'],
+    [/\be ca ge\b/gi, 'ECG'],
+    [/\be che ge\b/gi, 'EKG'],
+    [/\be e ge\b/gi, 'EEG'],
+    [/\ber ics\b/gi, 'Rx'],
+    [/\bee co grafie\b/gi, 'ecografie'],
+    [/\bee co grafia\b/gi, 'ecografia'],
+    [/\beco grafia?\b/gi, 'ecografia'],
+
+    // ═══ SECVENTE RMN ═══
+    [/\bT unu\b/gi, 'T1'],
+    [/\bT doi\b/gi, 'T2'],
+    [/\bT 1\b/g, 'T1'],
+    [/\bT 2\b/g, 'T2'],
+    [/\bte unu\b/gi, 'T1'],
+    [/\bte doi\b/gi, 'T2'],
+    [/\bFLER\b/gi, 'FLAIR'],
+    [/\bfler\b/gi, 'FLAIR'],
+    [/\bflair\b/gi, 'FLAIR'],
+    [/\bstir\b/gi, 'STIR'],
+    [/\bdi dabliu ai\b/gi, 'DWI'],
+    [/\bei di si\b/gi, 'ADC'],
+
+    // ═══ SUBSTANTE DE CONTRAST ═══
+    [/\bgado ?liniu?m\b/gi, 'gadolinium'],
+    [/\bgadoliniu\b/gi, 'gadolinium'],
+    [/\bcontrast intravenos\b/gi, 'contrast i.v.'],
+    [/\bintra ?venos\b/gi, 'intravenos'],
+
+    // ═══ ANATOMIE - CAP / CREIER ═══
+    [/\bhipo ?fiz[aă]\b/gi, 'hipofiz\u0103'],
+    [/\bparen ?chim\b/gi, 'parenchim'],
+    [/\bparen ?him\b/gi, 'parenchim'],
+    [/\bhipo ?campus\b/gi, 'hipocampus'],
+    [/\bhipo ?campal\b/gi, 'hipocampal'],
+    [/\bcorp calos\b/gi, 'corp calos'],
+    [/\bcorpul calos\b/gi, 'corpul calos'],
+    [/\bmenin ?ge\b/gi, 'meninge'],
+    [/\bdur[aă] mater\b/gi, 'dura mater'],
+    [/\bsub ?arahnoidi[ae]n\b/gi, 'subarahnoidian'],
+    [/\bsub ?dural\b/gi, 'subdural'],
+    [/\bsella tur[ct]ic[aă]\b/gi, 'sella turcic\u0103'],
+    [/\bsaua turceasc[aă]\b/gi, 'sella turcic\u0103'],
+    [/\bsinus caverno[s]\b/gi, 'sinus cavernos'],
+    [/\bcerebelo ?pontin\b/gi, 'cerebelo-pontin'],
+    [/\bunghi cerebelo ?pontin\b/gi, 'unghi cerebelo-pontin'],
+    [/\bfosa posterioar[aă]\b/gi, 'fosa posterioar\u0103'],
+
+    // ═══ ANATOMIE - COLOANA ═══
+    [/\bhernie? de disc\b/gi, 'hernie de disc'],
+    [/\bprotruzie discal[aă]\b/gi, 'protruzie discal\u0103'],
+    [/\bextruzie discal[aă]\b/gi, 'extruzie discal\u0103'],
+    [/\bbombaj discal\b/gi, 'bombaj discal'],
+    [/\bstenoz[aă] de canal\b/gi, 'stenoz\u0103 de canal'],
+    [/\bcanal rahidian\b/gi, 'canal rahidian'],
+    [/\bm[aă]duv[aă] spinal[aă]\b/gi, 'm\u0103duv\u0103 spinal\u0103'],
+    [/\bradiculopatie\b/gi, 'radiculopatie'],
+    [/\bspondilo ?listezis\b/gi, 'spondilolistezis'],
+    [/\bspondiloz[aă]\b/gi, 'spondiloz\u0103'],
+    [/\bL unu\b/gi, 'L1'],
+    [/\bL doi\b/gi, 'L2'],
+    [/\bL trei\b/gi, 'L3'],
+    [/\bL patru\b/gi, 'L4'],
+    [/\bL cinci\b/gi, 'L5'],
+    [/\bS unu\b/gi, 'S1'],
+    [/\bC unu\b/gi, 'C1'],
+    [/\bC doi\b/gi, 'C2'],
+    [/\bC trei\b/gi, 'C3'],
+    [/\bC patru\b/gi, 'C4'],
+    [/\bC cinci\b/gi, 'C5'],
+    [/\bC [sș]ase\b/gi, 'C6'],
+    [/\bC [sș]apte\b/gi, 'C7'],
+    [/\bD unu\b/gi, 'D1'],
+
+    // ═══ ANATOMIE - TORACE ═══
+    [/\bmedi ?astin\b/gi, 'mediastin'],
+    [/\bparenchi?m pulmonar\b/gi, 'parenchim pulmonar'],
+    [/\bsinusuri costo ?diafragmatice\b/gi, 'sinusuri costodiafragmatice'],
+    [/\bcosto ?diafragmatic\b/gi, 'costodiafragmatic'],
+    [/\bindex cardio ?toracic\b/gi, 'index cardio-toracic'],
+
+    // ═══ ANATOMIE - ABDOMEN ═══
+    [/\balitia[sz]ic\b/gi, 'alitiazic'],
+    [/\bcale(?:a)? biliar[aă]\b/gi, 'cale biliar\u0103'],
+    [/\bcalea biliar[aă] principal[aă]\b/gi, 'calea biliar\u0103 principal\u0103'],
+    [/\bhidronefroză\b/gi, 'hidronefroză'],
+    [/\bperi ?toneu\b/gi, 'peritoneu'],
+    [/\bretro ?peritoneal\b/gi, 'retroperitoneal'],
+    [/\baort[aă] abdominal[aă]\b/gi, 'aorta abdominal\u0103'],
+    [/\bven[aă] cav[aă]\b/gi, 'vena cav\u0103'],
+    [/\bven[aă] port[aă]\b/gi, 'vena port\u0103'],
+
+    // ═══ ANATOMIE - PELVIS ═══
+    [/\bvezic[aă] urinar[aă]\b/gi, 'vezica urinar\u0103'],
+
+    // ═══ PATOLOGIE / LEZIUNI ═══
+    [/\bleziune? focal[aă]\b/gi, 'leziune focal\u0103'],
+    [/\bleziuni focale\b/gi, 'leziuni focale'],
+    [/\bmas[aă] tumoral[aă]\b/gi, 'mas\u0103 tumoral\u0103'],
+    [/\bneoplasm\b/gi, 'neoplasm'],
+    [/\bcarcinom\b/gi, 'carcinom'],
+    [/\badenocarcinom\b/gi, 'adenocarcinom'],
+    [/\badenom\b/gi, 'adenom'],
+    [/\bmenigiom\b/gi, 'meningiom'],
+    [/\bglio ?blastom\b/gi, 'glioblastom'],
+    [/\bschwanom\b/gi, 'schwannom'],
+    [/\bhemoragie\b/gi, 'hemoragie'],
+    [/\bischemie\b/gi, 'ischemie'],
+    [/\binfarct\b/gi, 'infarct'],
+    [/\bedem\b/gi, 'edem'],
+    [/\bcalcifiere\b/gi, 'calcifiere'],
+    [/\bfibroz[aă]\b/gi, 'fibroz\u0103'],
+    [/\batelectazie\b/gi, 'atelectazie'],
+    [/\bpneumoni[ae]\b/gi, 'pneumonie'],
+    [/\bpneumotorace?\b/gi, 'pneumotorax'],
+    [/\btromboză\b/gi, 'tromboză'],
+    [/\bstenoz[aă]\b/gi, 'stenoz\u0103'],
+    [/\baneurism\b/gi, 'anevrism'],
+    [/\bdemielinizare\b/gi, 'demielinizare'],
+    [/\bhernie? de disc\b/gi, 'hernie de disc'],
+    [/\bbursi?t[aă]\b/gi, 'bursit\u0103'],
+    [/\bosteo ?poroză\b/gi, 'osteoporoz\u0103'],
+
+    // ═══ DESCRIPTORI RADIOLOGICI ═══
+    [/\bhiper ?intens\b/gi, 'hiperintens'],
+    [/\bhipo ?intens\b/gi, 'hipointens'],
+    [/\bizo ?intens\b/gi, 'izointens'],
+    [/\bhiper ?semnal\b/gi, 'hipersemnal'],
+    [/\bhipo ?semnal\b/gi, 'hiposemnal'],
+    [/\bizo ?semnal\b/gi, 'izosemnal'],
+    [/\bhiper ?dens\b/gi, 'hiperdens'],
+    [/\bhipo ?dens\b/gi, 'hipodens'],
+    [/\bizo ?dens\b/gi, 'izodens'],
+    [/\bhiper ?ecogen\b/gi, 'hiperecogen'],
+    [/\bhipo ?ecogen\b/gi, 'hipoecogen'],
+    [/\bizo ?ecogen\b/gi, 'izoecogen'],
+    [/\btrans ?sonic\b/gi, 'transonic'],
+    [/\bradio ?opac\b/gi, 'radioopac'],
+    [/\bradio ?transparent\b/gi, 'radiotransparent'],
+    [/\bprize? de contrast\b/gi, 'priz\u0103 de contrast'],
+    [/\bcaptare de contrast\b/gi, 'captare de contrast'],
+    [/\brehausare\b/gi, 'rehausare'],
+    [/\benhansare\b/gi, 'enhansare'],
+
+    // ═══ TERMENI GENERALI / CONCLUZII ═══
+    [/\bnu se evidențiază\b/gi, 'nu se eviden\u021biaz\u0103'],
+    [/\bse evidențiază\b/gi, 'se eviden\u021biaz\u0103'],
+    [/\bse constată\b/gi, 'se constat\u0103'],
+    [/\bse observă\b/gi, 'se observ\u0103'],
+    [/\bse descrie\b/gi, 'se descrie'],
+    [/\bnedeviat\b/gi, 'nedeviat'],
+    [/\bnedilatat\b/gi, 'nedilatat'],
+    [/\bosteo ?litic\b/gi, 'osteolitic'],
+    [/\bosteo ?blastic\b/gi, 'osteoblastic'],
+    [/\bosteo ?articular\b/gi, 'osteoarticular'],
+
+    // ═══ UNITATI ═══
+    [/\bmilimetri\b/gi, 'mm'],
+    [/\bcentimetri\b/gi, 'cm'],
+    [/\bmililitri\b/gi, 'ml'],
+    [/\bunit[aă][tț]i Hounsfield\b/gi, 'UH'],
+  ];
+  function applyMedicalCorrections(text) {
+    for (const [pattern, replacement] of medicalCorrections) {
+      text = text.replace(pattern, replacement);
+    }
+    return text;
+  }
+
   function postProcess(text) {
+    // Medical corrections first
+    text = applyMedicalCorrections(text);
+
     // "X pe Y" → X/Y  (e.g. "șaptesprezece pe doi" → "17/2")
     text = text.replace(
       /(\b(?:(?:douăzeci|douazeci|treizeci|patruzeci|cincizeci|[sș]aizeci|[sș]aptezeci|optzeci|nou[aă]zeci)(?:\s+(?:și|si)\s+(?:unu|una|doi|dou[aă]|trei|patru|cinci|[sș]ase|[sș]apte|opt|nou[aă]))?|zero|unu|una|un|doi|dou[aă]|trei|patru|cinci|[sș]ase|[sș]apte|opt|nou[aă]|zece|unsprezece|doi[sș]prezece|dou[aă]sprezece|treisprezece|paisprezece|cincisprezece|[sș]aisprezece|[sș]aptesprezece|optsprezece|nou[aă]sprezece|douăzeci|douazeci|treizeci|patruzeci|cincizeci|[sș]aizeci|[sș]aptezeci|optzeci|nou[aă]zeci|o sut[aă]|o mie)\b)\s+pe\s+(\b(?:(?:douăzeci|douazeci|treizeci|patruzeci|cincizeci|[sș]aizeci|[sș]aptezeci|optzeci|nou[aă]zeci)(?:\s+(?:și|si)\s+(?:unu|una|doi|dou[aă]|trei|patru|cinci|[sș]ase|[sș]apte|opt|nou[aă]))?|zero|unu|una|un|doi|dou[aă]|trei|patru|cinci|[sș]ase|[sș]apte|opt|nou[aă]|zece|unsprezece|doi[sș]prezece|dou[aă]sprezece|treisprezece|paisprezece|cincisprezece|[sș]aisprezece|[sș]aptesprezece|optsprezece|nou[aă]sprezece|douăzeci|douazeci|treizeci|patruzeci|cincizeci|[sș]aizeci|[sș]aptezeci|optzeci|nou[aă]zeci|o sut[aă]|o mie)\b)/gi,
