@@ -115,10 +115,11 @@
   .card-top {
     display: flex;
     align-items: center;
-    gap: 20px;
-    padding: 28px 36px;
+    gap: 16px;
+    padding: 28px 24px;
     border-bottom: 1px solid var(--card-border);
     background: linear-gradient(180deg, rgba(246,242,237,0.4), transparent);
+    overflow: hidden;
   }
 
   .rec-btn {
@@ -201,8 +202,8 @@
   }
 
   .ctrl-btn {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     border: none;
     cursor: pointer;
@@ -211,6 +212,7 @@
     justify-content: center;
     transition: all 0.2s;
     outline: none;
+    flex-shrink: 0;
   }
 
   .ctrl-pause {
@@ -245,12 +247,17 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+    min-width: 0;
+    flex: 1;
   }
 
   .status-label {
     font-size: 15px;
     font-weight: 600;
     color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .status-sub {
@@ -258,15 +265,15 @@
     color: var(--text-dim);
     font-weight: 300;
     letter-spacing: 0.3px;
+    white-space: nowrap;
   }
 
   .timer {
-    margin-left: auto;
     font-family: 'DM Mono', monospace;
     font-size: 18px;
     color: var(--text-dim);
     letter-spacing: 1px;
-    min-width: 80px;
+    flex-shrink: 0;
     text-align: right;
   }
 
@@ -1161,7 +1168,29 @@
         .select('*')
         .gte('created_at', thirtyDaysAgo)
         .order('created_at', { ascending: false });
-      if (!error && data) renderHistory(data);
+
+      if (!error && data) {
+        // Check for unsaved local records and push them to Supabase
+        const localRecords = getLocalHistory();
+        if (localRecords.length > 0 && currentUser) {
+          for (const lr of localRecords) {
+            await sb.from('recordings').insert({
+              user_id: currentUser.id,
+              text: lr.text,
+              duration: lr.duration
+            });
+          }
+          saveLocalHistory([]); // clear local after syncing
+          // Re-fetch to get proper IDs
+          const { data: fresh } = await sb
+            .from('recordings')
+            .select('*')
+            .gte('created_at', thirtyDaysAgo)
+            .order('created_at', { ascending: false });
+          if (fresh) { renderHistory(fresh); return; }
+        }
+        renderHistory(data);
+      }
     } catch { renderHistory(getLocalHistory()); }
   }
 
@@ -1174,7 +1203,11 @@
     btn.innerHTML = '<span class="save-spinner"></span> Se salvează...';
     btn.classList.add('saving');
 
-    // Optimistic: add to UI immediately
+    // Block page close while saving
+    const blockClose = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', blockClose);
+
+    // Create record object
     const tempRecord = {
       id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
@@ -1182,11 +1215,14 @@
       text: text
     };
 
-    // Get current visible records and prepend
-    const currentItems = document.querySelectorAll('.history-item');
-    const existingRecords = [];
-    // We'll just prepend visually via DOM
+    // ALWAYS save to localStorage first as safety net
+    const localRecords = getLocalHistory();
+    localRecords.unshift(tempRecord);
+    saveLocalHistory(localRecords);
+
+    // Optimistic: add to UI immediately
     addRecordToList(tempRecord);
+    clearTranscript();
 
     try {
       if (useSupabase && currentUser) {
@@ -1196,33 +1232,27 @@
           duration: seconds
         });
         if (error) {
-          showError('Eroare la salvare: ' + error.message);
-          // Remove optimistic entry
-          const el = document.querySelector(`[data-id="${tempRecord.id}"]`);
-          if (el) el.remove();
-          btn.textContent = 'Salvează';
-          btn.classList.remove('saving');
-          btn.disabled = false;
-          return;
+          showError('Salvat local. Eroare cloud: ' + error.message);
+        } else {
+          // Remove from localStorage since it's in Supabase now
+          const updated = getLocalHistory().filter(r => r.id !== tempRecord.id);
+          saveLocalHistory(updated);
+          // Sync in background
+          loadHistory();
         }
-        // Silently sync in background (don't flash the list)
-        loadHistory();
-      } else {
-        const records = getLocalHistory();
-        records.unshift(tempRecord);
-        saveLocalHistory(records);
       }
 
-      clearTranscript();
       btn.innerHTML = 'Salvat ✓';
       btn.classList.remove('saving');
       btn.classList.add('saved');
       setTimeout(() => { btn.textContent = 'Salvează'; btn.classList.remove('saved'); btn.disabled = false; }, 2000);
     } catch (err) {
-      showError('Eroare: ' + err.message);
-      btn.textContent = 'Salvează';
+      showError('Salvat local. Eroare: ' + err.message);
+      btn.innerHTML = 'Salvat local';
       btn.classList.remove('saving');
-      btn.disabled = false;
+      setTimeout(() => { btn.textContent = 'Salvează'; btn.disabled = false; }, 2000);
+    } finally {
+      window.removeEventListener('beforeunload', blockClose);
     }
   }
 
