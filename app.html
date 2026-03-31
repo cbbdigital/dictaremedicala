@@ -593,15 +593,15 @@
   }
 
   .history-item.saved-glow {
-    border-color: var(--green);
-    box-shadow: 0 0 0 3px rgba(106, 158, 126, 0.15), 0 4px 20px rgba(106, 158, 126, 0.12);
-    animation: slideIn 0.5s ease-out, glowPulse 2s ease-out 0.5s;
+    border-color: var(--green) !important;
+    box-shadow: 0 0 0 3px rgba(106, 158, 126, 0.2), 0 4px 20px rgba(106, 158, 126, 0.15) !important;
+    background: linear-gradient(135deg, rgba(106, 158, 126, 0.06), var(--card)) !important;
   }
 
-  @keyframes glowPulse {
-    0% { box-shadow: 0 0 0 3px rgba(106, 158, 126, 0.2), 0 4px 20px rgba(106, 158, 126, 0.15); }
-    50% { box-shadow: 0 0 0 6px rgba(106, 158, 126, 0.1), 0 4px 24px rgba(106, 158, 126, 0.1); }
-    100% { box-shadow: 0 1px 4px var(--warm-shadow); border-color: var(--card-border); }
+  .history-item.saved-glow .history-date::before {
+    content: '✓ salvat · ';
+    color: var(--green);
+    font-family: 'Outfit', sans-serif;
   }
 
   .history-item:hover {
