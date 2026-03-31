@@ -834,25 +834,38 @@
   // ─── Medical term corrections (speech recognition misinterpretations) ───
   // Comprehensive radiology / RMN / CT / ecografie dictionary
   const medicalCorrections = [
-    // ═══ ACRONIME ═══
-    [/\bREM ene(?:[- ]?ul)?\b/gi, 'RMN'],
-    [/\bar em en(?:e|ul|u)?\b/gi, 'RMN'],
-    [/\ber[- ]?em[- ]?en(?:e|ul)?\b/gi, 'RMN'],
+    // ═══ ACRONIME - RMN (all possible speech misinterpretations) ═══
+    [/\bREM[E ]?ENE(?:[- ]?ul)?\b/gi, 'RMN'],
+    [/\bREME ENE(?:[- ]?ul)?\b/gi, 'RMN'],
+    [/\breme ene\b/gi, 'RMN'],
     [/\bremene\b/gi, 'RMN'],
+    [/\bREM ene\b/gi, 'RMN'],
+    [/\bar ?em ?en(?:e|ul|u)?\b/gi, 'RMN'],
+    [/\ber ?em ?en(?:e|ul)?\b/gi, 'RMN'],
     [/\bermen\b/gi, 'RMN'],
-    [/\bce te(?:[- ]?ul)?\b/gi, 'CT'],
-    [/\bci ti(?:[- ]?ul)?\b/gi, 'CT'],
+    [/\ber em ene\b/gi, 'RMN'],
+    [/\bRM ene\b/gi, 'RMN'],
+    [/\brm ene\b/gi, 'RMN'],
+    [/\bere mene\b/gi, 'RMN'],
+    [/\bere me ne\b/gi, 'RMN'],
+    // CT
+    [/\bce ?te(?:[- ]?ul)?\b/gi, 'CT'],
+    [/\bci ?ti(?:[- ]?ul)?\b/gi, 'CT'],
     [/\bse te\b/gi, 'CT'],
+    [/\bCE TE\b/g, 'CT'],
+    // IRM
     [/\bi er em\b/gi, 'IRM'],
-    [/\bpet ce te\b/gi, 'PET-CT'],
-    [/\bpet ci ti\b/gi, 'PET-CT'],
+    // PET-CT
+    [/\bpet ce ?te\b/gi, 'PET-CT'],
+    [/\bpet ci ?ti\b/gi, 'PET-CT'],
+    // ECG / EKG / EEG
     [/\be ca ge\b/gi, 'ECG'],
     [/\be che ge\b/gi, 'EKG'],
     [/\be e ge\b/gi, 'EEG'],
     [/\ber ics\b/gi, 'Rx'],
-    [/\bee co grafie\b/gi, 'ecografie'],
-    [/\bee co grafia\b/gi, 'ecografia'],
-    [/\beco grafia?\b/gi, 'ecografia'],
+    // Ecografie
+    [/\bee ?co ?grafi[ea]\b/gi, 'ecografie'],
+    [/\beco ?grafi[ea]\b/gi, 'ecografie'],
 
     // ═══ SECVENTE RMN ═══
     [/\bT unu\b/gi, 'T1'],
@@ -1007,10 +1020,28 @@
     [/\bmililitri\b/gi, 'ml'],
     [/\bunit[aă][tț]i Hounsfield\b/gi, 'UH'],
   ];
+
+  // Known acronyms that SHOULD stay uppercase
+  const keepUppercase = new Set(['RMN','CT','IRM','PET','ECG','EKG','EEG','Rx','DWI','ADC','GRE','FLAIR','STIR','UH','T1','T2','L1','L2','L3','L4','L5','S1','C1','C2','C3','C4','C5','C6','C7','D1']);
+
   function applyMedicalCorrections(text) {
+    // Apply dictionary corrections
     for (const [pattern, replacement] of medicalCorrections) {
       text = text.replace(pattern, replacement);
     }
+    // Fix random ALL CAPS words but keep medical acronyms
+    text = text.replace(/\b([A-ZĂÎȘȚÂ]{2,})\b/g, (match) => {
+      if (keepUppercase.has(match)) return match;
+      return match.charAt(0) + match.slice(1).toLowerCase();
+    });
+    // Romanian orthography: "î" → "â" inside words (not at start/end)
+    // "cîmp" → "câmp", "sînt" → "sunt", "rîu" → "râu" etc.
+    text = text.replace(/\b(\w)î(\w)/g, (m, before, after) => before + 'â' + after);
+    text = text.replace(/\b(\w)Î(\w)/g, (m, before, after) => before + 'Â' + after);
+    // Common "sînt" → "sunt" (speech API sometimes uses old orthography)
+    text = text.replace(/\bsânt\b/gi, 'sunt');
+    text = text.replace(/\bsîntem\b/gi, 'suntem');
+    text = text.replace(/\bsînteți\b/gi, 'sunteți');
     return text;
   }
 
@@ -1385,60 +1416,44 @@
     if (!text) return;
 
     const btn = document.getElementById('saveBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="save-spinner"></span> Se salvează...';
-    btn.classList.add('saving');
-
-    // Block page close while saving
-    const blockClose = (e) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', blockClose);
+    const dur = seconds;
 
     // Create record object
     const tempRecord = {
       id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
-      duration: seconds,
+      duration: dur,
       text: text
     };
 
-    // ALWAYS save to localStorage first as safety net
+    // INSTANT: save to localStorage
     const localRecords = getLocalHistory();
     localRecords.unshift(tempRecord);
     saveLocalHistory(localRecords);
 
-    // Optimistic: add to UI immediately
+    // INSTANT: add to UI
     addRecordToList(tempRecord);
     clearTranscript();
 
-    try {
-      if (useSupabase && currentUser) {
-        const { error } = await sb.from('recordings').insert({
-          user_id: currentUser.id,
-          text: text,
-          duration: seconds
-        });
-        if (error) {
-          showError('Salvat local. Eroare cloud: ' + error.message);
-        } else {
-          // Remove from localStorage since it's in Supabase now
+    // INSTANT: show success
+    btn.innerHTML = 'Salvat ✓';
+    btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Salvează'; btn.classList.remove('saved'); }, 2000);
+
+    // BACKGROUND: sync to Supabase (no await, no blocking)
+    if (useSupabase && currentUser) {
+      sb.from('recordings').insert({
+        user_id: currentUser.id,
+        text: text,
+        duration: dur
+      }).then(({ error }) => {
+        if (!error) {
+          // Remove from localStorage since it's in cloud now
           const updated = getLocalHistory().filter(r => r.id !== tempRecord.id);
           saveLocalHistory(updated);
-          // Sync in background
-          loadHistory();
+          loadHistory(); // silent background sync
         }
-      }
-
-      btn.innerHTML = 'Salvat ✓';
-      btn.classList.remove('saving');
-      btn.classList.add('saved');
-      setTimeout(() => { btn.textContent = 'Salvează'; btn.classList.remove('saved'); btn.disabled = false; }, 2000);
-    } catch (err) {
-      showError('Salvat local. Eroare: ' + err.message);
-      btn.innerHTML = 'Salvat local';
-      btn.classList.remove('saving');
-      setTimeout(() => { btn.textContent = 'Salvează'; btn.disabled = false; }, 2000);
-    } finally {
-      window.removeEventListener('beforeunload', blockClose);
+      }).catch(() => {});
     }
   }
 
