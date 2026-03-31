@@ -482,16 +482,43 @@
     background: var(--accent);
     color: #fff;
     border-color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 110px;
   }
   .btn-save:hover {
     background: var(--accent-soft);
     border-color: var(--accent-soft);
     color: #fff;
   }
+  .btn-save:disabled {
+    opacity: 0.8;
+    cursor: wait;
+  }
+  .btn-save.saving {
+    background: var(--text-mid);
+    border-color: var(--text-mid);
+  }
   .btn-save.saved {
     background: var(--green);
     border-color: var(--green);
     color: #fff;
+  }
+
+  .save-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   /* History */
@@ -544,9 +571,18 @@
     border: 1px solid var(--card-border);
     border-radius: 16px;
     padding: 20px 24px;
-    transition: all 0.2s;
+    transition: all 0.3s;
     position: relative;
     box-shadow: 0 1px 4px var(--warm-shadow);
+  }
+
+  .history-item.new-item {
+    animation: slideIn 0.4s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .history-item:hover {
@@ -931,10 +967,22 @@
         body: JSON.stringify({ text: text.trim() })
       });
 
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('Punctuation HTTP error:', response.status, errText);
+        showError('Punctuație eșuată (HTTP ' + response.status + ')');
+        return text;
+      }
+
       const data = await response.json();
       if (data?.text) return data.text;
+      if (data?.error) {
+        showError('Punctuație: ' + data.error);
+        return text;
+      }
     } catch (err) {
-      console.warn('Punctuation failed:', err);
+      console.error('Punctuation failed:', err);
+      showError('Punctuație eșuată: ' + err.message);
     } finally {
       isPunctuating = false;
     }
@@ -1121,41 +1169,126 @@
     const text = finalTranscript.trim();
     if (!text) return;
 
-    if (useSupabase && currentUser) {
-      const { error } = await sb.from('recordings').insert({
-        user_id: currentUser.id,
-        text: text,
-        duration: seconds
-      });
-      if (error) { showError('Eroare la salvare: ' + error.message); return; }
-      await loadHistory();
-    } else {
-      const records = getLocalHistory();
-      records.unshift({
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString(),
-        duration: seconds,
-        text: text
-      });
-      saveLocalHistory(records);
-      renderHistory(records);
-    }
-
     const btn = document.getElementById('saveBtn');
-    btn.textContent = 'Salvat ✓';
-    btn.classList.add('saved');
-    setTimeout(() => { btn.textContent = 'Salvează'; btn.classList.remove('saved'); }, 2000);
-    clearTranscript();
+    btn.disabled = true;
+    btn.innerHTML = '<span class="save-spinner"></span> Se salvează...';
+    btn.classList.add('saving');
+
+    // Optimistic: add to UI immediately
+    const tempRecord = {
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+      duration: seconds,
+      text: text
+    };
+
+    // Get current visible records and prepend
+    const currentItems = document.querySelectorAll('.history-item');
+    const existingRecords = [];
+    // We'll just prepend visually via DOM
+    addRecordToList(tempRecord);
+
+    try {
+      if (useSupabase && currentUser) {
+        const { error } = await sb.from('recordings').insert({
+          user_id: currentUser.id,
+          text: text,
+          duration: seconds
+        });
+        if (error) {
+          showError('Eroare la salvare: ' + error.message);
+          // Remove optimistic entry
+          const el = document.querySelector(`[data-id="${tempRecord.id}"]`);
+          if (el) el.remove();
+          btn.textContent = 'Salvează';
+          btn.classList.remove('saving');
+          btn.disabled = false;
+          return;
+        }
+        // Silently sync in background (don't flash the list)
+        loadHistory();
+      } else {
+        const records = getLocalHistory();
+        records.unshift(tempRecord);
+        saveLocalHistory(records);
+      }
+
+      clearTranscript();
+      btn.innerHTML = 'Salvat ✓';
+      btn.classList.remove('saving');
+      btn.classList.add('saved');
+      setTimeout(() => { btn.textContent = 'Salvează'; btn.classList.remove('saved'); btn.disabled = false; }, 2000);
+    } catch (err) {
+      showError('Eroare: ' + err.message);
+      btn.textContent = 'Salvează';
+      btn.classList.remove('saving');
+      btn.disabled = false;
+    }
+  }
+
+  // Add a single record to top of list (optimistic)
+  function addRecordToList(r) {
+    const list = document.getElementById('historyList');
+    const empty = document.getElementById('historyEmpty');
+    empty.style.display = 'none';
+
+    const div = document.createElement('div');
+    div.className = 'history-item new-item';
+    div.setAttribute('data-id', r.id);
+    div.innerHTML = `
+      <div class="history-item-top">
+        <span class="history-date">${formatDate(r.created_at)}</span>
+        <span class="history-duration">${formatDuration(r.duration)}</span>
+      </div>
+      <div class="history-preview">${escapeHtml(r.text)}</div>
+      <div class="history-bottom">
+        <button class="expand-btn" onclick="toggleExpand('${r.id}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <span>Extinde</span>
+        </button>
+        <div class="history-actions">
+          <button onclick="copyRecord('${escapeForAttr(r.text)}', this)">Copiază</button>
+          <button class="delete-btn" onclick="deleteRecord('${r.id}')">Șterge</button>
+        </div>
+      </div>
+    `;
+    list.insertBefore(div, list.firstChild);
+
+    // Update count
+    const count = document.getElementById('historyCount');
+    const items = list.querySelectorAll('.history-item').length;
+    count.textContent = `${items} înregistr${items === 1 ? 'are' : 'ări'}`;
   }
 
   async function deleteRecord(id) {
+    // Animate out
+    const el = document.querySelector(`[data-id="${id}"]`);
+    if (el) {
+      el.style.transition = 'all 0.3s ease';
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(20px)';
+      await new Promise(r => setTimeout(r, 300));
+      el.remove();
+    }
+
+    // Update count
+    const list = document.getElementById('historyList');
+    const items = list.querySelectorAll('.history-item').length;
+    const count = document.getElementById('historyCount');
+    if (items === 0) {
+      count.textContent = '';
+      document.getElementById('historyEmpty').style.display = '';
+      list.appendChild(document.getElementById('historyEmpty'));
+    } else {
+      count.textContent = `${items} înregistr${items === 1 ? 'are' : 'ări'}`;
+    }
+
+    // Delete from DB
     if (useSupabase && currentUser) {
-      const { error } = await sb.from('recordings').delete().eq('id', id);
-      if (!error) await loadHistory();
+      await sb.from('recordings').delete().eq('id', id);
     } else {
       const records = getLocalHistory().filter(r => r.id !== id);
       saveLocalHistory(records);
-      renderHistory(records);
     }
   }
 
